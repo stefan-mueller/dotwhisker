@@ -76,202 +76,233 @@
 #'
 #' @export
 
-dwplot <- function(x, alpha = .05, dodge_size = .15, order_vars = NULL,
+dwplot <- function(x, alpha = .05, alpha2 = NULL, dodge_size = .15, order_vars = NULL,
                    show_intercept = FALSE, model_name = "model",
                    dot_args = NULL, whisker_args = NULL, ...) {
-    # If x is model object(s), convert to a tidy data.frame
-    df <- dw_tidy(x,...)
-
-    if (!show_intercept) df <- df %>% filter(!grepl("^\\(Intercept\\)$|^\\w+\\|\\w+$", term)) # enable detecting intercept in polr objects
-
-    # Set variables that will appear in pipelines to NULL to make R CMD check happy
-    estimate <- model <- lb <- ub <- term <- std.error <- NULL
-
-    n_vars <- length(unique(df$term))
-    dodge_size <- dodge_size
-
-    # Confirm number of models, get model names
-    if (model_name %in% names(df)) {
-        dfmod <- df[[model_name]]
-        n_models <- length(unique(dfmod))
-        ## re-order/restore levels by order in data set
-        df[[model_name]] <- factor(dfmod, levels = unique(dfmod))
+  # If x is model object(s), convert to a tidy data.frame
+  df <- dw_tidy(x,...)
+  
+  if (!show_intercept) df <- df %>% filter(!grepl("^\\(Intercept\\)$|^\\w+\\|\\w+$", term)) # enable detecting intercept in polr objects
+  
+  # Set variables that will appear in pipelines to NULL to make R CMD check happy
+  estimate <- model <- lb <- ub <- term <- std.error <- lb_alpha2 <- ub_alpha2 <- std.error_alpha2 <- NULL
+  
+  n_vars <- length(unique(df$term))
+  dodge_size <- dodge_size
+  
+  # Confirm number of models, get model names
+  if (model_name %in% names(df)) {
+    dfmod <- df[[model_name]]
+    n_models <- length(unique(dfmod))
+    ## re-order/restore levels by order in data set
+    df[[model_name]] <- factor(dfmod, levels = unique(dfmod))
+  } else {
+    if (length(df$term) == n_vars) {
+      df[[model_name]] <- factor("one")
+      n_models <- 1
     } else {
-        if (length(df$term) == n_vars) {
-            df[[model_name]] <- factor("one")
-            n_models <- 1
-        } else {
-            stop("Please add a variable named '",
-                 model_name,"' to distinguish different models")
-        }
+      stop("Please add a variable named '",
+           model_name,"' to distinguish different models")
     }
-    mod_names <- unique(df[[model_name]])
-
-    # Specify order of variables if an order is provided
-    if (!is.null(order_vars)) {
-        df$term <- factor(df$term, levels = order_vars)
-        df <- df[match(order_vars, df$term),] %>% stats::na.omit()
-    }
-
-    # Add rows of NAs for variables not included in a particular model
-    if (n_models > 1) {
-        df <- add_NAs(df, n_models, mod_names)
-    }
-
-    # Prep arguments to ggplot
-    var_names <- df$term
-
-    y_ind <- rep(seq(n_vars, 1), n_models)
-    df$y_ind <- y_ind
-
-    # Confirm alpha within bounds
-    if (alpha < 0 | alpha > 1) {
-        stop("Value of alpha for the confidence intervals should be between 0 and 1.")
-    }
-
-    # Generate lower and upper bound if not included in results
-    if ((!"lb" %in% names(df)) || (!"ub" %in% names(df))) {
-        if ("std.error" %in% names(df)) {
-            ci <- 1 - alpha/2
-            df <- transform(df,
-                            lb = estimate - stats::qnorm(ci) * std.error,
-                            ub = estimate + stats::qnorm(ci) * df$std.error)
-        } else {
-            df <- transform(df, lb=NA, ub=NA)
-        }
-    }
-
-    # Calculate y-axis shift for plotting multiple models
-    if (n_models == 1) {
-        shift <- 0
+  }
+  mod_names <- unique(df[[model_name]])
+  
+  # Specify order of variables if an order is provided
+  if (!is.null(order_vars)) {
+    df$term <- factor(df$term, levels = order_vars)
+    df <- df[match(order_vars, df$term),] %>% stats::na.omit()
+  }
+  
+  # Add rows of NAs for variables not included in a particular model
+  if (n_models > 1) {
+    df <- add_NAs(df, n_models, mod_names)
+  }
+  
+  # Prep arguments to ggplot
+  var_names <- df$term
+  
+  y_ind <- rep(seq(n_vars, 1), n_models)
+  df$y_ind <- y_ind
+  
+  # Confirm alpha within bounds
+  if (alpha < 0 | alpha > 1) {
+    stop("Value of alpha for the confidence intervals should be between 0 and 1.")
+  }
+  
+  # Generate lower and upper bound if not included in results
+  if ((!"lb" %in% names(df)) || (!"ub" %in% names(df))) {
+    if ("std.error" %in% names(df)) {
+      ci <- 1 - alpha/2
+      df <- transform(df,
+                      lb = estimate - stats::qnorm(ci) * df$std.error,
+                      ub = estimate + stats::qnorm(ci) * df$std.error)
     } else {
-        shift <- seq(dodge_size, -dodge_size, length.out = n_models)
+      df <- transform(df, lb=NA, ub=NA)
     }
-    shift_index <- data.frame(model = mod_names, shift)
-    df <- left_join(df, shift_index, by="model")
-
-    # Catch difference between single and multiple models
-    if (length(y_ind) != length(var_names)) {
-        var_names <- unique(var_names)
+  }
+  
+  
+  # Confirm alpha within bounds
+  if (alpha2 < 0 | alpha2 > 1) {
+    stop("Value of alpha for the confidence intervals should be between 0 and 1.")
+  }
+  
+  # Generate lower and upper bound if not included in results
+  if ((!"lb_alpha2" %in% names(df)) || (!"ub_alpha2" %in% names(df))) {
+    if ("std.error_alpha2" %in% names(df)) {
+      ci2 <- 1 - alpha2/2
+      df <- transform(df,
+                       lb_alpha2 = estimate - stats::qnorm(ci2) * df$std.error,
+                       ub_alpha2 = estimate + stats::qnorm(ci2) * df$std.error)
+    } else {
+      df <- transform(df, lb_alpha2=NA, ub_alpha2=NA)
     }
-
-    # Generate arguments to geom_segment and geom_point
-    seg_args0 <- list(aes(x = lb, xend = ub,
-                          y = y_ind + shift, yend = y_ind + shift),
-                      na.rm = TRUE)
-    segment_args <- c(seg_args0, whisker_args)
-
-    point_args0 <- list(na.rm = TRUE)
-    point_args <- c(point_args0, dot_args)
-
-
-    # Make the plot
-    p <- ggplot(transform(df, model = factor(model)),
-                          aes(x = estimate, y = y_ind + shift, colour = model)) +
-        do.call(geom_segment, segment_args) +  # Draw segments first ...
-        do.call(geom_point, point_args) +
-        scale_y_continuous(breaks = y_ind, labels = var_names) +
-        coord_cartesian(ylim = c(.5, n_vars+.5)) +
-        ylab("") + xlab("")
-
-    # Omit the legend if there is only one model
-    if (!"model" %in% names(df) | length(mod_names) == 1){
-        p <- p + theme(legend.position="none")
-    }
-
-    return(p)
+  }
+  
+  # Calculate y-axis shift for plotting multiple models
+  if (n_models == 1) {
+    shift <- 0
+  } else {
+    shift <- seq(dodge_size, -dodge_size, length.out = n_models)
+  }
+  shift_index <- data.frame(model = mod_names, shift)
+  df <- left_join(df, shift_index, by="model")
+  
+  # Catch difference between single and multiple models
+  if (length(y_ind) != length(var_names)) {
+    var_names <- unique(var_names)
+  }
+  
+  # Generate arguments to geom_segment and geom_point
+  seg_args0 <- list(aes(x = lb, xend = ub,
+                        y = y_ind + shift, yend = y_ind + shift),
+                    na.rm = TRUE)
+  
+  # Generate arguments for second geom_segment (alpha2)
+  seg_args0_alpha2 <- list(aes(x = lb_alpha2, xend = ub_alpha2, 
+                        y = y_ind + shift, yend = y_ind + shift), size = 3, alpha = 0.8,
+                    na.rm = TRUE)
+  segment_args <- c(seg_args0, whisker_args)
+  segment_args_alpha2 <- c(seg_args0_alpha2, whisker_args)
+  
+  point_args0 <- list(na.rm = TRUE)
+  point_args <- c(point_args0, dot_args)
+  
+  
+  # Make the plot
+  p <- ggplot(transform(df, model = factor(model)),
+              aes(x = estimate, y = y_ind + shift, colour = model)) +
+    do.call(geom_segment, segment_args) +  # Draw segments first ...
+    do.call(geom_segment, segment_args_alpha2) +
+    do.call(geom_point, point_args) +
+    scale_y_continuous(breaks = y_ind, labels = var_names) +
+    coord_cartesian(ylim = c(.5, n_vars+.5)) +
+    ylab("") + xlab("")
+  
+  # Omit the legend if there is only one model
+  if (!"model" %in% names(df) | length(mod_names) == 1){
+    p <- p + theme(legend.position="none")
+  }
+  
+  return(p)
 }
 
-
 dw_tidy <- function(x,...) {
-    # Set variables that will appear in pipelines to NULL to make R CMD check happy
-    process_lm <- tidy.summary.lm <- NULL
-
-    if (!is.data.frame(x)) {
-        if (class(x)=="list") {
-            ind <- seq(length(x))
-            nm <- paste("Model", ind)
-            if (!is.null(nm_orig <- names(x))) {
-                setNm <- nchar(nm)>0
-                nm[setNm] <- nm_orig[setNm]
-            }
-            names(x) <- nm
-
-            df <- do.call(plyr::ldply,
-                          c(list(.data=x,.fun=broom::tidy,.id="model"),
-                            list(...)))
-
-        } else if (class(x) == "lmerMod"){
-            group <- vector() # only for avoiding the NOTE in check
-            df <- broom::tidy(x) %>% filter(group == "fixed")
-        } else {
-            if (class(x) == "polr"){
-                family.polr <- function(object,...) NULL
-                tidy.polr <- function (x, conf.int = FALSE, conf.level = 0.95, exponentiate = FALSE, quick = FALSE, ...) {
-                    if (quick) {
-                        co <- stats::coef(x)
-                        ret <- data.frame(term = names(co), estimate = unname(co))
-                        return(process_lm(ret, x, conf.int = FALSE, exponentiate = exponentiate))
-                    }
-                    s <- summary(x)
-                    ret <- tidy.summary.lm(s)
-                    process_lm(ret, x, conf.int = conf.int, conf.level = conf.level,
-                               exponentiate = exponentiate)
-                }
-            }
-            df <- broom::tidy(x,...)
-        }
+  # Set variables that will appear in pipelines to NULL to make R CMD check happy
+  process_lm <- tidy.summary.lm <- NULL
+  
+  if (!is.data.frame(x)) {
+    if (class(x)=="list") {
+      ind <- seq(length(x))
+      nm <- paste("Model", ind)
+      if (!is.null(nm_orig <- names(x))) {
+        setNm <- nchar(nm)>0
+        nm[setNm] <- nm_orig[setNm]
+      }
+      names(x) <- nm
+      
+      df <- do.call(plyr::ldply,
+                    c(list(.data=x,.fun=broom::tidy,.id="model"),
+                      list(...)))
+      
+    } else if (class(x) == "lmerMod"){
+      group <- vector() # only for avoiding the NOTE in check
+      df <- broom::tidy(x) %>% filter(group == "fixed")
     } else {
-        df <- x
+      if (class(x) == "polr"){
+        family.polr <- function(object,...) NULL
+        tidy.polr <- function (x, conf.int = FALSE, conf.level = 0.95, exponentiate = FALSE, quick = FALSE, ...) {
+          if (quick) {
+            co <- stats::coef(x)
+            ret <- data.frame(term = names(co), estimate = unname(co))
+            return(process_lm(ret, x, conf.int = FALSE, exponentiate = exponentiate))
+          }
+          s <- summary(x)
+          ret <- tidy.summary.lm(s)
+          process_lm(ret, x, conf.int = conf.int, conf.level = conf.level,
+                     exponentiate = exponentiate)
+        }
+      }
+      df <- broom::tidy(x,...)
     }
-    return(df)
+  } else {
+    df <- x
+  }
+  return(df)
 }
 
 add_NAs <- function(df = df, n_models = n_models, mod_names = mod_names,
                     model_name = "model") {
-    # Set variables that will appear in pipelines to NULL to make R CMD check happy
-    term <- model <- NULL
+  # Set variables that will appear in pipelines to NULL to make R CMD check happy
+  term <- model <- NULL
+  
+  if (!is.factor(df$term)) {
+    df$term <- factor(df$term, levels = unique(df$term))
+  }
+  if (!is.factor(dfmod <- df[[model_name]])) {
+    df[[model_name]] <- factor(dfmod, levels = unique(dfmod))
+  }
+  for (i in seq(n_models)) {
+    m <- df %>% filter(model==factor(mod_names[[i]], levels = mod_names))
+    not_in <- setdiff(unique(df$term), m$term)
+    for (j in seq(not_in)) {
+      t <- data.frame(term = factor(not_in[j], levels = levels(df$term)),
+                      model = factor(mod_names[[i]], levels = mod_names))
+      if ("submodel" %in% names(m)) {
+        t$submodel <- m$submodel[1]
+      }
+      if ("submodel" %in% names(m)) {
+        m <- full_join(m, t, by = c("term", "model", "submodel"))
+      } else {
+        m <- full_join(m, t, by = c("term", "model"))
+      }
+    }
+    if (i==1) {
+      dft <- m %>% arrange(term)
+    } else {
+      dft <- bind_rows(dft, m %>% arrange(term))
+    }
+  }
+  
+  df <- dft
+  
+  df$estimate <- as.numeric(df$estimate)
+  if ("std.error" %in% names(df)) {
+    df$std.error <- as.numeric(df$std.error)
+  }
+  if ("ub" %in% names(df)) {
+    df$ub <- as.numeric(df$ub)
+  }
+  if ("lb" %in% names(df)) {
+    df$lb <- as.numeric(df$lb)
+  }
 
-    if (!is.factor(df$term)) {
-        df$term <- factor(df$term, levels = unique(df$term))
-    }
-    if (!is.factor(dfmod <- df[[model_name]])) {
-        df[[model_name]] <- factor(dfmod, levels = unique(dfmod))
-    }
-    for (i in seq(n_models)) {
-        m <- df %>% filter(model==factor(mod_names[[i]], levels = mod_names))
-        not_in <- setdiff(unique(df$term), m$term)
-        for (j in seq(not_in)) {
-            t <- data.frame(term = factor(not_in[j], levels = levels(df$term)),
-                            model = factor(mod_names[[i]], levels = mod_names))
-            if ("submodel" %in% names(m)) {
-                t$submodel <- m$submodel[1]
-            }
-            if ("submodel" %in% names(m)) {
-                m <- full_join(m, t, by = c("term", "model", "submodel"))
-            } else {
-                m <- full_join(m, t, by = c("term", "model"))
-            }
-        }
-        if (i==1) {
-            dft <- m %>% arrange(term)
-        } else {
-            dft <- bind_rows(dft, m %>% arrange(term))
-        }
-    }
-
-    df <- dft
-
-    df$estimate <- as.numeric(df$estimate)
-    if ("std.error" %in% names(df)) {
-        df$std.error <- as.numeric(df$std.error)
-    }
-    if ("ub" %in% names(df)) {
-        df$ub <- as.numeric(df$ub)
-    }
-    if ("lb" %in% names(df)) {
-        df$lb <- as.numeric(df$lb)
-    }
-
-    return(df)
+  if ("ub_alpha2" %in% names(df)) {
+    df$ub_alpha2 <- as.numeric(df$ub_alpha2)
+  }
+  if ("lb_alpha2" %in% names(df)) {
+    df$lb_alpha2 <- as.numeric(df$lb_alpha2)
+  }
+  
+  return(df)
 }
